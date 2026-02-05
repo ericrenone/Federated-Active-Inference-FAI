@@ -1,4 +1,4 @@
-# Federated Active Inference (FAI)
+# Federated Active Inference (FAI) - FRAMEWORK
 
 ### Distributed Minimization of Variational Free Energy at Scale: Free-energy minimization alone is sufficient to drive distributed learning, convergence, and model simplification in a federated multi-agent system.
 
