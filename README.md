@@ -31,7 +31,6 @@ The learner treats the parameter space as a **Riemannian Manifold**.
 ### 3. Federated Aggregation (FedAvg-KL)
 To synchronize 1,000+ nodes, the framework employs **KL-Optimal Aggregation**, minimizing the global divergence across the population:
 
-$$\min_{\theta^*} \sum_{i=1}^N D_{KL}(p_{\theta_i} || p_{\theta^*})$$
 
 ---
 
