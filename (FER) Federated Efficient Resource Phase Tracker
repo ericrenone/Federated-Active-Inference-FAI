@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+
+
+import numpy as np
+import hashlib
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from datetime import datetime
+
+# ==================== CONFIGURATION ====================
+SEED = int(datetime.now().timestamp()) % 10000
+np.random.seed(SEED)
+
+FIG_SIZE = (16, 9)
+EXTENT = 7
+GRID_SIZE = 100
+SKIP = 6
+LR_BASE = 0.22
+LR_DECAY = 0.005
+FRAMES = 1000
+INTERVAL = 25
+EPS = 1e-6
+HIST_LEN = 100
+
+METRICS = ["MOMENTUM FLUX", "PHASE COHERENCE", "GEOMETRIC TENSION", "SHA-256 DELTA"]
+COLORS = ["#00ffcc", "#ffaa00", "#ff0055", "#aa00ff"]
+
+# ==================== PHASE FIELD ====================
+def get_density_field(x, y):
+    """2D Potential Field (Inverted Fisher Information)"""
+    r = np.sqrt(x**2 + y**2)
+    return -(0.4*r**2 - 3.0*np.cos(1.2*x)*np.cos(1.2*y) + 2.0*np.log1p(r))
+
+# ==================== FIGURE & LAYOUT ====================
+fig = plt.figure(figsize=FIG_SIZE, facecolor='#050505')
+gs = fig.add_gridspec(2, 4)
+
+# Primary Phase Map
+ax_map = fig.add_subplot(gs[:, 0:2], facecolor='#050505')
+x_v = np.linspace(-EXTENT, EXTENT, GRID_SIZE)
+y_v = np.linspace(-EXTENT, EXTENT, GRID_SIZE)
+X, Y = np.meshgrid(x_v, y_v)
+Z = get_density_field(X, Y)
+
+ax_map.contourf(X, Y, Z, levels=40, cmap='magma', alpha=0.4)
+
+grad_y, grad_x = np.gradient(Z)
+ax_map.quiver(X[::SKIP, ::SKIP], Y[::SKIP, ::SKIP], 
+              grad_x[::SKIP, ::SKIP], grad_y[::SKIP, ::SKIP], 
+              color='white', alpha=0.15, scale=15, width=0.003)
+
+path_line, = ax_map.plot([], [], color='#00ffcc', lw=2, alpha=0.8)
+head_dot, = ax_map.plot([], [], 'wo', markersize=7, markeredgecolor='#00ffcc')
+
+# Dynamic Telemetry HUD
+axes = []
+lines = []
+for i in range(2):
+    for j in range(2):
+        ax = fig.add_subplot(gs[i, j+2], facecolor='#111')
+        axes.append(ax)
+        line, = ax.plot([], [], color=COLORS[i*2+j], lw=1.5)
+        lines.append(line)
+        ax.set_title(METRICS[i*2+j], color='white', fontsize=9, weight='bold')
+        ax.tick_params(colors='gray', labelsize=8)
+        ax.grid(True, color='#222', linestyle=':')
+
+# ==================== STATE ====================
+state = {
+    'pos': np.random.uniform(-6, 6, 2),
+    'prev_pos': np.random.uniform(-6, 6, 2),
+    'path': [],
+    'm_hist': [[] for _ in METRICS]
+}
+
+# ==================== UPDATE FUNCTION ====================
+def update(frame):
+    # Gradient calculation
+    p = state['pos']
+    gx = (get_density_field(p[0]+EPS, p[1]) - get_density_field(p[0]-EPS, p[1])) / (2*EPS)
+    gy = (get_density_field(p[0], p[1]+EPS) - get_density_field(p[0], p[1]-EPS)) / (2*EPS)
+    grad = np.array([gx, gy])
+
+    # Motion metrics
+    move_vec = state['pos'] - state['prev_pos']
+    velocity = np.linalg.norm(move_vec)
+    coherence = np.dot(move_vec, grad) / (np.linalg.norm(move_vec)*np.linalg.norm(grad)+1e-9)
+    tension = np.linalg.norm(grad)
+    hash_val = int(hashlib.sha256(state['pos'].tobytes()).hexdigest()[:4], 16) / 65535.0
+
+    # Update position
+    lr = LR_BASE / (1 + frame * LR_DECAY)
+    state['prev_pos'] = state['pos'].copy()
+    state['pos'] += lr * grad
+    state['path'].append(state['pos'].copy())
+
+    # Update history
+    for i, v in enumerate([velocity, coherence, tension, hash_val]):
+        state['m_hist'][i].append(v)
+
+    # Update plots
+    pts = np.array(state['path'])
+    path_line.set_data(pts[:, 0], pts[:, 1])
+    head_dot.set_data([state['pos'][0]], [state['pos'][1]])
+
+    for i, line in enumerate(lines):
+        data = state['m_hist'][i]
+        line.set_data(range(len(data)), data)
+        axes[i].set_xlim(max(0, frame-HIST_LEN), frame+5)
+        recent = data[-HIST_LEN:]
+        if recent:
+            axes[i].set_ylim(min(recent)*0.95, max(recent)*1.05 + 0.01)
+
+    return [path_line, head_dot] + lines
+
+# ==================== FINAL FIGURE SETTINGS ====================
+ax_map.set_axis_off()
+ax_map.set_title(fr"FER PHASE TRACKER | COORDINATE SYSTEM: $\Theta$" + f"\nSEED: {SEED}", 
+                 color='white', pad=20, fontsize=11)
+
+ani = animation.FuncAnimation(fig, update, frames=FRAMES, interval=INTERVAL, blit=True)
+plt.tight_layout()
+plt.show()
